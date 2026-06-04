@@ -7,25 +7,60 @@ import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import Textarea from "@/components/ui/Textarea";
 import Select from "@/components/ui/Select";
+import ModelSelector from "@/components/editor/ModelSelector";
 import { SparklesIcon, BoltIcon } from "@/components/landing/Icons";
+import { useAuth } from "@/context/AuthContext";
+import {
+  createProject,
+  saveChatMessage,
+  updateProjectFiles,
+  updateProjectStatus,
+} from "@/lib/firestore-service";
+import { isFirebaseConfigured } from "@/lib/firebase";
 import type { WebsiteType } from "@/types";
 
-const websiteTypes: { value: WebsiteType; label: string; description: string }[] = [
-  { value: "portfolio", label: "Portfolio", description: "Personal or agency portfolio" },
-  { value: "agency", label: "Agency", description: "Creative or marketing agency" },
+const websiteTypes: {
+  value: WebsiteType;
+  label: string;
+  description: string;
+}[] = [
+  {
+    value: "portfolio",
+    label: "Portfolio",
+    description: "Personal or agency portfolio",
+  },
+  {
+    value: "agency",
+    label: "Agency",
+    description: "Creative or marketing agency",
+  },
   { value: "saas", label: "SaaS", description: "Software product landing" },
-  { value: "real-estate", label: "Real Estate", description: "Listings and inquiries" },
-  { value: "restaurant", label: "Restaurant", description: "Menus and reservations" },
+  {
+    value: "real-estate",
+    label: "Real Estate",
+    description: "Listings and inquiries",
+  },
+  {
+    value: "restaurant",
+    label: "Restaurant",
+    description: "Menus and reservations",
+  },
   { value: "app", label: "App", description: "Mobile app launch page" },
   { value: "blog", label: "Blog", description: "Editorial and articles" },
-  { value: "ecommerce", label: "E-commerce", description: "Storefront and products" },
+  {
+    value: "ecommerce",
+    label: "E-commerce",
+    description: "Storefront and products",
+  },
 ];
 
 export default function NewProjectPage() {
   const router = useRouter();
+  const { user } = useAuth();
   const [name, setName] = useState("");
   const [type, setType] = useState<WebsiteType>("portfolio");
   const [prompt, setPrompt] = useState("");
+  const [selectedModel, setSelectedModel] = useState<string>("openrouter/free");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,6 +68,16 @@ export default function NewProjectPage() {
     e.preventDefault();
     setError(null);
 
+    if (!user) {
+      setError("You must be signed in to create a project.");
+      return;
+    }
+    if (!isFirebaseConfigured) {
+      setError(
+        "Firebase is not configured. Add env vars to .env.local first.",
+      );
+      return;
+    }
     if (!name.trim()) {
       setError("Please enter a project name.");
       return;
@@ -43,23 +88,94 @@ export default function NewProjectPage() {
     }
 
     setLoading(true);
+    let projectId: string | null = null;
     try {
+      projectId = await createProject(user.uid, {
+        title: name.trim(),
+        prompt: prompt.trim(),
+        type,
+        files: [],
+        status: "generating",
+        selectedModel,
+      });
+
+      await saveChatMessage(projectId, user.uid, {
+        role: "user",
+        content: prompt.trim(),
+      }).catch((err) => {
+        console.error("Failed to save user prompt message", err);
+      });
+
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), type, prompt: prompt.trim() }),
+        body: JSON.stringify({
+          projectId,
+          title: name.trim(),
+          type,
+          prompt: prompt.trim(),
+          model: selectedModel,
+        }),
       });
 
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        setError(data.error || "Generation failed. Please try again.");
-        return;
-      }
+      const data = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        projectName?: string;
+        description?: string;
+        files?: { path: string; content: string }[];
+        error?: string;
+      };
 
-      const data = (await res.json()) as { id?: string };
-      const id = data.id || "demo-project";
-      router.push(`/dashboard/projects/${id}`);
+      if (
+        res.ok &&
+        data.success === true &&
+        Array.isArray(data.files) &&
+        data.files.length > 0
+      ) {
+        const files = data.files;
+
+        await updateProjectFiles(projectId, user.uid, files);
+
+        const assistantSummary =
+          data.description?.trim() ||
+          "I've generated your website. Take a look at the preview.";
+
+        await saveChatMessage(projectId, user.uid, {
+          role: "assistant",
+          content: assistantSummary,
+        }).catch((err) => {
+          console.error("Failed to save assistant message", err);
+        });
+
+        router.push(`/dashboard/projects/${projectId}`);
+      } else {
+        const errMsg =
+          (data.success === false && data.error) ||
+          "AI generation failed. Check OPENROUTER_API_KEY on the server and try again.";
+
+        await updateProjectStatus(
+          projectId,
+          user.uid,
+          "failed",
+          errMsg,
+        ).catch(() => undefined);
+
+        await saveChatMessage(projectId, user.uid, {
+          role: "assistant",
+          content: `Generation failed: ${errMsg}`,
+        }).catch(() => undefined);
+
+        setError(errMsg);
+      }
     } catch (err) {
+      if (projectId) {
+        await updateProjectStatus(
+          projectId,
+          user.uid,
+          "failed",
+          (err as Error).message,
+        ).catch(() => undefined);
+      }
       setError((err as Error).message || "Something went wrong.");
     } finally {
       setLoading(false);
@@ -109,6 +225,20 @@ export default function NewProjectPage() {
               hint="The more detail you provide, the better the result."
             />
 
+            <div>
+              <label className="block text-sm font-medium text-zinc-200 mb-1.5">
+                AI model
+              </label>
+              <ModelSelector
+                value={selectedModel}
+                onChange={setSelectedModel}
+                freeOnly
+              />
+              <p className="mt-1.5 text-xs text-zinc-500">
+                Free models may have rate limits depending on OpenRouter usage policy.
+              </p>
+            </div>
+
             {error && (
               <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300">
                 {error}
@@ -122,6 +252,7 @@ export default function NewProjectPage() {
                 size="lg"
                 loading={loading}
                 leftIcon={<SparklesIcon className="h-4 w-4" />}
+                disabled={!isFirebaseConfigured}
               >
                 {loading ? "Generating..." : "Generate Website"}
               </Button>
@@ -172,9 +303,10 @@ export default function NewProjectPage() {
               What happens next?
             </h3>
             <ol className="text-sm text-zinc-400 space-y-2 list-decimal list-inside">
+              <li>A project is created in your dashboard</li>
+              <li>Your prompt is saved as the first chat message</li>
               <li>AI generates HTML, CSS, and JS</li>
-              <li>You see a live preview in the editor</li>
-              <li>Refine with chat, then export as ZIP</li>
+              <li>Files save to the project and the editor opens</li>
             </ol>
           </div>
         </aside>

@@ -1,9 +1,16 @@
-export interface User {
+import type { User as FirebaseUser } from "firebase/auth";
+
+export interface UserProfile {
   uid: string;
-  email: string | null;
-  displayName: string | null;
+  name: string;
+  email: string;
   photoURL: string | null;
+  provider: "password" | "google" | "github";
+  createdAt: number;
+  updatedAt: number;
 }
+
+export type AuthUser = FirebaseUser;
 
 export type WebsiteType =
   | "portfolio"
@@ -15,44 +22,110 @@ export type WebsiteType =
   | "blog"
   | "ecommerce";
 
-export interface Project {
+export type ProjectStatus = "draft" | "generating" | "generated" | "failed";
+
+export type ProjectFile = {
+  path: string;
+  content: string;
+};
+
+export type ChatMessage = {
+  id?: string;
+  projectId: string;
+  userId: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  createdAt?: any;
+};
+
+export type Project = {
+  id: string;
+  userId: string;
+  title: string;
+  type: string;
+  prompt: string;
+  files: ProjectFile[];
+  status: ProjectStatus;
+  description?: string;
+  errorMessage?: string;
+  selectedModel?: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  createdAt?: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  updatedAt?: any;
+};
+
+export type FirestoreProject = Project;
+
+export type OpenRouterModel = {
   id: string;
   name: string;
-  type: WebsiteType;
-  prompt: string;
-  createdAt: number;
-  updatedAt: number;
-  thumbnail?: string;
-  files?: ProjectFiles;
-}
+  description?: string;
+  contextLength?: number;
+  isFree: boolean;
+  promptPrice?: string;
+  completionPrice?: string;
+};
 
-export interface ProjectFiles {
-  "index.html": string;
-  "styles.css": string;
-  "script.js": string;
-}
+export type OpenRouterModelsSuccess = {
+  success: true;
+  models: OpenRouterModel[];
+};
 
-export interface ChatMessage {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  createdAt: number;
-}
+export type OpenRouterModelsError = {
+  success: false;
+  error: string;
+};
+
+export type OpenRouterModelsResponse =
+  | OpenRouterModelsSuccess
+  | OpenRouterModelsError;
 
 export type DevicePreview = "desktop" | "tablet" | "mobile";
 
 export interface GenerateRequest {
+  projectId: string;
+  title: string;
+  type: string;
   prompt: string;
-  type: WebsiteType;
-  name: string;
+  model?: string;
 }
 
-export interface GenerateResponse {
-  files: ProjectFiles;
-  message?: string;
+export interface GenerateSuccessResponse {
+  success: true;
+  projectName: string;
+  description: string;
+  files: ProjectFile[];
 }
 
-export interface ApiError {
+export interface GenerateErrorResponse {
+  success: false;
   error: string;
-  code?: string;
 }
+
+export type GenerateApiResponse =
+  | GenerateSuccessResponse
+  | GenerateErrorResponse;
+
+export interface EditRequest {
+  projectId: string;
+  files: ProjectFile[];
+  message: string;
+  model?: string;
+}
+
+export interface EditSuccessResponse {
+  success: true;
+  projectName: string;
+  description: string;
+  files: ProjectFile[];
+  reply: string;
+}
+
+export interface EditErrorResponse {
+  success: false;
+  error: string;
+}
+
+export type EditApiResponse = EditSuccessResponse | EditErrorResponse;

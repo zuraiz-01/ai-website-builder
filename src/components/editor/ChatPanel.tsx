@@ -17,6 +17,9 @@ const defaultSuggestions = [
   "Add a testimonials section",
 ];
 
+const MIN_TEXTAREA_HEIGHT = 48;
+const MAX_TEXTAREA_HEIGHT = 220;
+
 export default function ChatPanel({
   messages,
   onSend,
@@ -25,6 +28,19 @@ export default function ChatPanel({
 }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const autoResize = () => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = `${MIN_TEXTAREA_HEIGHT}px`;
+    const next = Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT);
+    el.style.height = `${Math.max(next, MIN_TEXTAREA_HEIGHT)}px`;
+  };
+
+  useEffect(() => {
+    autoResize();
+  }, [input]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -32,11 +48,16 @@ export default function ChatPanel({
     }
   }, [messages, loading]);
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
+  const submit = async (e?: FormEvent) => {
+    if (e) e.preventDefault();
     const text = input.trim();
     if (!text || loading) return;
     setInput("");
+    // Reset textarea height immediately, then focus
+    requestAnimationFrame(() => {
+      autoResize();
+      textareaRef.current?.focus();
+    });
     await onSend(text);
   };
 
@@ -80,7 +101,7 @@ export default function ChatPanel({
             className={`flex ${m.role === "user" ? "justify-end" : "justify-start"} animate-slide-up`}
           >
             <div
-              className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
+              className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap ${
                 m.role === "user"
                   ? "bg-gradient-to-br from-violet-500 to-cyan-500 text-white"
                   : "bg-white/5 border border-white/10 text-zinc-200"
@@ -113,22 +134,27 @@ export default function ChatPanel({
         className="p-3 border-t border-white/5 flex items-end gap-2"
       >
         <textarea
+          ref={textareaRef}
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => {
+            setInput(e.target.value);
+            autoResize();
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
-              submit(e as unknown as FormEvent);
+              submit();
             }
           }}
           placeholder="Ask the AI to make changes..."
           rows={1}
-          className="flex-1 resize-none rounded-xl border border-white/10 bg-white/[0.03] text-zinc-100 placeholder-zinc-500 text-sm px-3.5 py-2.5 focus:border-violet-500/60 focus:ring-2 focus:ring-violet-500/20 focus:outline-none max-h-32"
+          style={{ height: MIN_TEXTAREA_HEIGHT }}
+          className="flex-1 resize-none overflow-y-auto rounded-xl border border-white/10 bg-white/[0.03] text-zinc-100 placeholder-zinc-500 text-sm leading-relaxed px-3.5 py-2.5 min-h-[48px] max-h-[220px] focus:border-violet-500/60 focus:ring-2 focus:ring-violet-500/20 focus:outline-none"
         />
         <button
           type="submit"
           disabled={!input.trim() || loading}
-          className="btn-primary h-10 w-10 rounded-xl flex items-center justify-center text-white disabled:opacity-50"
+          className="btn-primary h-10 w-10 rounded-xl flex items-center justify-center text-white disabled:opacity-50 shrink-0"
         >
           <SendIcon className="h-4 w-4" />
         </button>

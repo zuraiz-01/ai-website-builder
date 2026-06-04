@@ -1,11 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { auth, isFirebaseConfigured } from "@/lib/firebase";
-import { onAuthStateChanged, signOut, type User } from "firebase/auth";
 import { ArrowRightIcon, SparklesIcon } from "@/components/landing/Icons";
+import { useAuth } from "@/context/AuthContext";
 
 interface TopBarProps {
   title: string;
@@ -16,32 +15,22 @@ interface TopBarProps {
 export default function TopBar({ title, subtitle, rightSlot }: TopBarProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
+  const { user, logout } = useAuth();
   const [signingOut, setSigningOut] = useState(false);
 
-  useEffect(() => {
-    if (!isFirebaseConfigured || !auth) {
-      return;
-    }
-    const unsub = onAuthStateChanged(auth, (u) => setUser(u));
-    return () => unsub();
-  }, []);
-
   const handleSignOut = async () => {
-    if (!auth) return;
+    if (signingOut) return;
     setSigningOut(true);
     try {
-      await signOut(auth);
+      await logout();
       router.push("/");
     } catch (e) {
       console.error(e);
-    } finally {
       setSigningOut(false);
     }
   };
 
   const isEditor = pathname?.includes("/projects/");
-  const showHomeLink = !pathname?.endsWith("/dashboard");
 
   return (
     <header className="sticky top-0 z-30 border-b border-white/5 bg-background/70 backdrop-blur-xl">
@@ -55,7 +44,7 @@ export default function TopBar({ title, subtitle, rightSlot }: TopBarProps) {
               ← Back
             </Link>
           )}
-          {showHomeLink && !isEditor && (
+          {!isEditor && (
             <Link href="/" className="md:hidden flex items-center gap-2">
               <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500 to-cyan-500">
                 <SparklesIcon className="h-3.5 w-3.5 text-white" />

@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   HomeIcon,
-  FolderIcon,
   PlusIcon,
   SparklesIcon,
 } from "@/components/landing/Icons";
@@ -12,7 +11,6 @@ import {
 const links = [
   { href: "/dashboard", label: "Overview", icon: HomeIcon, exact: true },
   { href: "/dashboard/new", label: "New project", icon: PlusIcon },
-  { href: "/dashboard/projects/demo-project", label: "Demo editor", icon: FolderIcon },
 ];
 
 export default function Sidebar() {

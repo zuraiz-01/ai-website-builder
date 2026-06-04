@@ -1,51 +1,55 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { Suspense, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { useRouter, useSearchParams } from "next/navigation";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
-import { auth, isFirebaseConfigured } from "@/lib/firebase";
+import { useAuth, describeAuthError } from "@/context/AuthContext";
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { login, isConfigured, user, loading } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(
+    searchParams.get("error") === "not-configured"
+      ? "Firebase isn't configured. Add NEXT_PUBLIC_FIREBASE_* env vars."
+      : null,
+  );
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!loading && user) {
+      router.replace("/dashboard");
+    }
+  }, [user, loading, router]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-
-    if (!isFirebaseConfigured || !auth) {
-      setError(
-        "Authentication isn't configured yet. Add Firebase env vars to enable login.",
-      );
-      return;
-    }
     if (!email || !password) {
       setError("Please enter your email and password.");
       return;
     }
-
-    setLoading(true);
+    setSubmitting(true);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      await login(email, password);
       router.push("/dashboard");
     } catch (err) {
       const code = (err as { code?: string })?.code;
-      const map: Record<string, string> = {
-        "auth/invalid-email": "That email address looks invalid.",
-        "auth/user-not-found": "No account found with that email.",
-        "auth/wrong-password": "Incorrect password. Try again.",
-        "auth/invalid-credential": "Invalid email or password.",
-        "auth/too-many-requests": "Too many attempts. Try again later.",
-      };
-      setError(map[code ?? ""] ?? (err as Error).message);
+      setError(describeAuthError(code, (err as Error).message));
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
@@ -56,11 +60,10 @@ export default function LoginPage() {
         Sign in to your account to continue building.
       </p>
 
-      {!isFirebaseConfigured && (
+      {!isConfigured && (
         <div className="mt-5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
           Firebase is not configured. Add the required env vars to{" "}
           <code className="font-mono">.env.local</code> to enable real login.
-          The form below is in demo mode.
         </div>
       )}
 
@@ -92,7 +95,14 @@ export default function LoginPage() {
           </div>
         )}
 
-        <Button type="submit" variant="primary" size="lg" fullWidth loading={loading}>
+        <Button
+          type="submit"
+          variant="primary"
+          size="lg"
+          fullWidth
+          loading={submitting}
+          disabled={!isConfigured}
+        >
           Sign in
         </Button>
       </form>

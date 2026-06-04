@@ -1,34 +1,30 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  createUserWithEmailAndPassword,
-  updateProfile,
-} from "firebase/auth";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
-import { auth, isFirebaseConfigured } from "@/lib/firebase";
+import { useAuth, describeAuthError } from "@/context/AuthContext";
 
 export default function SignupPage() {
   const router = useRouter();
+  const { signup, isConfigured, user, loading } = useAuth();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!loading && user) {
+      router.replace("/dashboard");
+    }
+  }, [user, loading, router]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-
-    if (!isFirebaseConfigured || !auth) {
-      setError(
-        "Authentication isn't configured yet. Add Firebase env vars to enable signup.",
-      );
-      return;
-    }
     if (!name.trim()) {
       setError("Please enter your name.");
       return;
@@ -37,24 +33,15 @@ export default function SignupPage() {
       setError("Password must be at least 6 characters.");
       return;
     }
-
-    setLoading(true);
+    setSubmitting(true);
     try {
-      const cred = await createUserWithEmailAndPassword(auth, email, password);
-      if (cred.user && name.trim()) {
-        await updateProfile(cred.user, { displayName: name.trim() });
-      }
+      await signup(name.trim(), email, password);
       router.push("/dashboard");
     } catch (err) {
       const code = (err as { code?: string })?.code;
-      const map: Record<string, string> = {
-        "auth/email-already-in-use": "An account with that email already exists.",
-        "auth/invalid-email": "That email address looks invalid.",
-        "auth/weak-password": "Password is too weak. Use at least 6 characters.",
-      };
-      setError(map[code ?? ""] ?? (err as Error).message);
+      setError(describeAuthError(code, (err as Error).message));
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
@@ -65,7 +52,7 @@ export default function SignupPage() {
         Start building websites with AI in minutes.
       </p>
 
-      {!isFirebaseConfigured && (
+      {!isConfigured && (
         <div className="mt-5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
           Firebase is not configured. Add the required env vars to{" "}
           <code className="font-mono">.env.local</code> to enable real signup.
@@ -112,7 +99,14 @@ export default function SignupPage() {
           </div>
         )}
 
-        <Button type="submit" variant="primary" size="lg" fullWidth loading={loading}>
+        <Button
+          type="submit"
+          variant="primary"
+          size="lg"
+          fullWidth
+          loading={submitting}
+          disabled={!isConfigured}
+        >
           Create account
         </Button>
 
