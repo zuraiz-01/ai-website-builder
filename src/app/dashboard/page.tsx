@@ -5,11 +5,13 @@ import Link from "next/link";
 import TopBar from "@/components/layout/Navbar";
 import EmptyState from "@/components/ui/EmptyState";
 import Loader from "@/components/ui/Loader";
+import UsageMeter, { planBadgeClass } from "@/components/profile/UsageMeter";
 import {
   FolderIcon,
   PlusIcon,
   FolderPlusIcon,
   TrashIcon,
+  SparklesIcon,
 } from "@/components/landing/Icons";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -17,7 +19,7 @@ import {
   getUserProjects,
 } from "@/lib/firestore-service";
 import { isFirebaseConfigured } from "@/lib/firebase";
-import type { FirestoreProject } from "@/types";
+import type { FirestoreProject, SubscriptionPlan } from "@/types";
 
 const typeLabels: Record<string, string> = {
   portfolio: "Portfolio",
@@ -148,6 +150,12 @@ export default function DashboardPage() {
       />
 
       <div className="space-y-6">
+        <PlanSummaryCard
+          plan={userProfile?.subscription.plan}
+          used={userProfile?.subscription.usedGenerations ?? 0}
+          limit={userProfile?.subscription.generationLimit ?? 3}
+        />
+
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <StatCard label="Projects" value={stats.total} accent="violet" />
           <StatCard label="Live sites" value={stats.live} accent="cyan" />
@@ -330,6 +338,54 @@ function StatCard({
       <div className="relative">
         <div className="text-2xl sm:text-3xl font-bold text-zinc-50">{value}</div>
         <div className="text-xs text-zinc-400 mt-0.5">{label}</div>
+      </div>
+    </div>
+  );
+}
+
+function PlanSummaryCard({
+  plan,
+  used,
+  limit,
+}: {
+  plan: SubscriptionPlan | undefined;
+  used: number;
+  limit: number;
+}) {
+  const remaining = Math.max(0, limit - used);
+  return (
+    <div className="glass rounded-2xl p-5 relative overflow-hidden">
+      <div className="absolute inset-0 bg-gradient-to-br from-violet-500/10 to-cyan-500/5 pointer-events-none" />
+      <div className="relative flex flex-col sm:flex-row sm:items-center gap-4">
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="h-10 w-10 rounded-xl bg-gradient-to-br from-violet-500 to-cyan-500 flex items-center justify-center shrink-0">
+            <SparklesIcon className="h-5 w-5 text-white" />
+          </span>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="text-xs uppercase tracking-wider font-semibold text-zinc-500">
+                Subscription
+              </p>
+              <span
+                className={`text-[10px] uppercase tracking-wider font-semibold rounded-full border px-2 py-0.5 ${planBadgeClass(plan ?? "free")}`}
+              >
+                {(plan ?? "free")} plan
+              </span>
+            </div>
+            <h3 className="text-base sm:text-lg font-semibold text-zinc-50 mt-0.5">
+              {remaining} of {limit} generations left
+            </h3>
+          </div>
+        </div>
+        <div className="flex-1 min-w-[200px] sm:max-w-xs">
+          <UsageMeter used={used} limit={limit} label="Generations" />
+        </div>
+        <Link
+          href="/dashboard/profile"
+          className="inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-xs font-semibold bg-white/5 border border-white/10 text-zinc-100 hover:bg-white/10 transition self-start sm:self-auto"
+        >
+          Manage plan →
+        </Link>
       </div>
     </div>
   );

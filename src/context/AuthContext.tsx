@@ -21,8 +21,12 @@ import { auth, isFirebaseConfigured } from "@/lib/firebase";
 import {
   createUserProfile,
   ensureUserProfile,
+  getUserProfile,
+  updateUserProfile,
+  updateUserSubscription,
+  type UpdateUserProfileInput,
 } from "@/lib/firestore-service";
-import type { UserProfile } from "@/types";
+import type { SubscriptionPlan, UserProfile } from "@/types";
 
 interface AuthContextValue {
   user: User | null;
@@ -34,6 +38,11 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   clearError: () => void;
+  refreshProfile: () => Promise<UserProfile | null>;
+  updateProfileData: (
+    data: UpdateUserProfileInput,
+  ) => Promise<UserProfile | null>;
+  switchPlan: (plan: SubscriptionPlan) => Promise<UserProfile | null>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -130,6 +139,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const clearError = useCallback(() => setError(null), []);
 
+  const refreshProfile = useCallback(async (): Promise<UserProfile | null> => {
+    if (!auth?.currentUser) {
+      setUserProfile(null);
+      return null;
+    }
+    const fresh = await getUserProfile(auth.currentUser.uid);
+    setUserProfile(fresh);
+    return fresh;
+  }, []);
+
+  const updateProfileData = useCallback(
+    async (data: UpdateUserProfileInput): Promise<UserProfile | null> => {
+      if (!auth?.currentUser) return null;
+      await updateUserProfile(auth.currentUser.uid, data);
+      return refreshProfile();
+    },
+    [refreshProfile],
+  );
+
+  const switchPlan = useCallback(
+    async (plan: SubscriptionPlan): Promise<UserProfile | null> => {
+      if (!auth?.currentUser) return null;
+      await updateUserSubscription(auth.currentUser.uid, plan);
+      return refreshProfile();
+    },
+    [refreshProfile],
+  );
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
@@ -141,8 +178,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       logout,
       clearError,
+      refreshProfile,
+      updateProfileData,
+      switchPlan,
     }),
-    [user, userProfile, loading, error, signup, login, logout, clearError],
+    [
+      user,
+      userProfile,
+      loading,
+      error,
+      signup,
+      login,
+      logout,
+      clearError,
+      refreshProfile,
+      updateProfileData,
+      switchPlan,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -13,6 +13,15 @@ export function SparklesIcon(props: IconProps) {
   );
 }
 
+export function UserIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className={base} {...props}>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21c0-4 4-7 8-7s8 3 8 7" />
+    </svg>
+  );
+}
+
 export function EyeIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className={base} {...props}>

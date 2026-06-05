@@ -1,13 +1,38 @@
 import type { User as FirebaseUser } from "firebase/auth";
 
+export type SubscriptionPlan = "free" | "pro" | "team";
+
+export type SubscriptionStatus = "active" | "inactive";
+
+export type UserSubscription = {
+  plan: SubscriptionPlan;
+  status: SubscriptionStatus;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  startedAt?: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  updatedAt?: any;
+  generationLimit: number;
+  projectLimit: number;
+  usedGenerations: number;
+  features: string[];
+};
+
 export interface UserProfile {
   uid: string;
   name: string;
   email: string;
   photoURL: string | null;
   provider: "password" | "google" | "github";
-  createdAt: number;
-  updatedAt: number;
+  phone?: string;
+  company?: string;
+  website?: string;
+  bio?: string;
+  role: "user";
+  subscription: UserSubscription;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  createdAt?: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  updatedAt?: any;
 }
 
 export type AuthUser = FirebaseUser;

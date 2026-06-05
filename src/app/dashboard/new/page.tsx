@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import TopBar from "@/components/layout/Navbar";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
@@ -12,6 +13,8 @@ import { SparklesIcon, BoltIcon } from "@/components/landing/Icons";
 import { useAuth } from "@/context/AuthContext";
 import {
   createProject,
+  getUserProjects,
+  incrementUserGenerationUsage,
   saveChatMessage,
   updateProjectFiles,
   updateProjectStatus,
@@ -56,13 +59,31 @@ const websiteTypes: {
 
 export default function NewProjectPage() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, userProfile, refreshProfile } = useAuth();
   const [name, setName] = useState("");
   const [type, setType] = useState<WebsiteType>("portfolio");
   const [prompt, setPrompt] = useState("");
   const [selectedModel, setSelectedModel] = useState<string>("openrouter/free");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [projectCount, setProjectCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    getUserProjects(user.uid)
+      .then((list) => setProjectCount(list.length))
+      .catch(() => setProjectCount(null));
+  }, [user]);
+
+  const sub = userProfile?.subscription;
+  const usedGens = sub?.usedGenerations ?? 0;
+  const genLimit = sub?.generationLimit ?? 3;
+  const remainingGens = Math.max(0, genLimit - usedGens);
+  const projectLimit = sub?.projectLimit ?? 3;
+  const projectCountSafe = projectCount ?? 0;
+  const remainingProjects = Math.max(0, projectLimit - projectCountSafe);
+  const atGenerationLimit = remainingGens <= 0;
+  const atProjectLimit = projectCount !== null && remainingProjects <= 0;
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -86,6 +107,18 @@ export default function NewProjectPage() {
       setError("Please describe your idea in at least 10 characters.");
       return;
     }
+    if (atProjectLimit) {
+      setError(
+        "You have reached your project limit. Upgrade your plan from Profile page.",
+      );
+      return;
+    }
+    if (atGenerationLimit) {
+      setError(
+        "You have reached your generation limit. Upgrade your plan from Profile page.",
+      );
+      return;
+    }
 
     setLoading(true);
     let projectId: string | null = null;
@@ -98,6 +131,11 @@ export default function NewProjectPage() {
         status: "generating",
         selectedModel,
       });
+
+      // Refresh local project count after creation
+      if (projectCount !== null) {
+        setProjectCount(projectCount + 1);
+      }
 
       await saveChatMessage(projectId, user.uid, {
         role: "user",
@@ -146,6 +184,11 @@ export default function NewProjectPage() {
         }).catch((err) => {
           console.error("Failed to save assistant message", err);
         });
+
+        // Increment generation usage AFTER successful generation
+        incrementUserGenerationUsage(user.uid, 1)
+          .then(() => refreshProfile())
+          .catch((err) => console.error("Failed to increment usage", err));
 
         router.push(`/dashboard/projects/${projectId}`);
       } else {
@@ -239,6 +282,45 @@ export default function NewProjectPage() {
               </p>
             </div>
 
+            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-xs text-zinc-400 space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <span>
+                  Plan:{" "}
+                  <span className="font-semibold text-zinc-100">
+                    {(sub?.plan ?? "free").toUpperCase()}
+                  </span>
+                </span>
+                <Link
+                  href="/dashboard/profile"
+                  className="text-[11px] font-semibold uppercase tracking-wider text-violet-300 hover:text-violet-200"
+                >
+                  Manage plan →
+                </Link>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span>
+                  Generations: {usedGens} / {genLimit}{" "}
+                  <span
+                    className={
+                      atGenerationLimit ? "text-red-300" : "text-zinc-500"
+                    }
+                  >
+                    ({remainingGens} left)
+                  </span>
+                </span>
+                <span>
+                  Projects: {projectCountSafe} / {projectLimit}{" "}
+                  <span
+                    className={
+                      atProjectLimit ? "text-red-300" : "text-zinc-500"
+                    }
+                  >
+                    ({remainingProjects} left)
+                  </span>
+                </span>
+              </div>
+            </div>
+
             {error && (
               <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300">
                 {error}
@@ -252,9 +334,17 @@ export default function NewProjectPage() {
                 size="lg"
                 loading={loading}
                 leftIcon={<SparklesIcon className="h-4 w-4" />}
-                disabled={!isFirebaseConfigured}
+                disabled={
+                  !isFirebaseConfigured || atProjectLimit || atGenerationLimit
+                }
               >
-                {loading ? "Generating..." : "Generate Website"}
+                {loading
+                  ? "Generating..."
+                  : atProjectLimit
+                    ? "Project limit reached"
+                    : atGenerationLimit
+                      ? "Generation limit reached"
+                      : "Generate Website"}
               </Button>
               <Button
                 type="button"

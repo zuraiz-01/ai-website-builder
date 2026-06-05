@@ -102,7 +102,29 @@ Both routes use `src/lib/openrouter.ts`:
 
 ### `users/{uid}`
 ```ts
-{ name, email, photoURL, provider, createdAt, updatedAt }
+{
+  name: string,
+  email: string,
+  photoURL: string | null,
+  provider: "password" | "google" | "github",
+  phone?: string,
+  company?: string,
+  website?: string,
+  bio?: string,
+  role: "user",
+  subscription: {
+    plan: "free" | "pro" | "team",
+    status: "active" | "inactive",
+    startedAt: Timestamp,
+    updatedAt: Timestamp,
+    generationLimit: number,
+    projectLimit: number,
+    usedGenerations: number,
+    features: string[]
+  },
+  createdAt: Timestamp,
+  updatedAt: Timestamp
+}
 ```
 
 ### `projects/{projectId}`
@@ -136,7 +158,22 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow create: if request.auth != null && request.auth.uid == userId;
-      allow read, update, delete: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null
+        && request.auth.uid == userId
+        // Prevent users from changing immutable fields from the client
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.createdAt == resource.data.createdAt
+        // Clients can edit subscription freely in this MVP — for
+        // production move this behind an admin SDK / Cloud Function
+        // so users cannot grant themselves a higher plan.
+        && (
+          // allow self-switching plans, but cap the limit fields
+          (request.resource.data.subscription.plan in ["free", "pro", "team"])
+        );
+      allow delete: if request.auth != null && request.auth.uid == userId;
     }
 
     match /projects/{projectId} {
@@ -183,6 +220,29 @@ If the index is not yet provisioned the dashboard falls back to a client-side so
 - Send button is disabled while loading or when the input is empty.
 - Input keeps focus and resets its height after sending.
 
+## Profile & subscription (manual / demo mode)
+- `/dashboard/profile` lets the signed-in user view and edit profile fields (name, phone, company, website, bio, photo URL). Email is read-only.
+- The page also shows the current subscription, usage meters, and three plan cards (Free / Pro / Team) for manual plan switching.
+- Plan switching is **demo / admin-less** — no payment gateway is wired in. Clicking a plan card opens a confirm modal and updates the user's `subscription` object in Firestore.
+- Profile changes are saved via `updateUserProfile(uid, data)` in `src/lib/firestore-service.ts`.
+- Plan changes are saved via `updateUserSubscription(uid, plan)`. `usedGenerations` is preserved across plan changes; the UI clamps the displayed progress to the new `generationLimit`.
+- Default plan for new users: `free` (3 generations / 3 projects). Existing users without a `subscription` field are auto-migrated on next sign-in.
+
+### Plan configuration
+| Plan | Generation limit | Project limit | Features |
+|---|---|---|---|
+| Free | 3 | 3 | Basic generation, ZIP export, community support |
+| Pro  | 50 | 50 | Chat-based editing, priority models, better templates |
+| Team | 200 | 200 | Team collaboration, advanced editing, premium templates |
+
+### Limit enforcement
+- **Project limit** — `/dashboard/new` calls `getUserProjects(user.uid)` on mount. If the count is already at the user's `projectLimit`, the form blocks submission with a friendly error and the submit button reads "Project limit reached". A small status strip shows `projects / limit` and a link to the profile page.
+- **Generation limit** — before calling `/api/generate`, the page checks `usedGenerations >= generationLimit`. The submit button reads "Generation limit reached" when at the cap.
+- **Increment** — only after a successful generation does the client call `incrementUserGenerationUsage(uid)`, which atomically increments `subscription.usedGenerations` in Firestore. Failed generations do not consume a credit.
+- **Chat edits do not count** as new generations. They use `/api/edit` and do not touch `usedGenerations`.
+
+> **Demo / MVP note.** Subscription switching is currently self-service. For production, move plan changes to a Cloud Function triggered by a payment webhook, restrict `users/{uid}.subscription` writes to that function via Security Rules, and remove the client-side `switchPlan` helper.
+
 ## Manual test checklist
 1. Sign up → a `users/{uid}` doc is created.
 2. New project → a `projects/{id}` doc with `status: "generating"` and one user message.
@@ -203,12 +263,14 @@ src/
     api/models/route.ts                   # /api/models    (server-only, free models list)
     dashboard/
       layout.tsx                          # <RequireAuth> wrapper
-      page.tsx                            # real projects list
-      new/page.tsx                        # create + generate
+      page.tsx                            # real projects list + plan summary
+      new/page.tsx                        # create + generate (with plan limits)
+      profile/page.tsx                    # profile CRUD + plan switcher
       projects/[projectId]/page.tsx       # editor: preview, code, chat, save
     layout.tsx                            # <AuthProvider>
     page.tsx                              # landing
   components/editor/ModelSelector.tsx    # free models dropdown, search, error+retry
+  components/profile/                     # ProfileForm, SubscriptionCard, PlanCard, UsageMeter
   components/                             # UI, layout, editor, landing
   context/AuthContext.tsx                 # onAuthStateChanged + user profile
   hooks/useRequireAuth.tsx                # route guard
